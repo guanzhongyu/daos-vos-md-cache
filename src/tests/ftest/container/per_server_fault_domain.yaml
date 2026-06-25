@@ -1,0 +1,42 @@
+hosts:
+  test_servers: 4
+  test_clients: 1
+
+timeout: 300
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  crt_timeout: 10
+  engines:
+    0:
+      pinned_numa_node: 0
+      nr_xs_helpers: 1
+      log_file: daos_server_0.log
+      storage: auto
+    1:
+      pinned_numa_node: 1
+      nr_xs_helpers: 1
+      log_file: daos_server_1.log
+      storage: auto
+
+pool:
+  size: 200G
+  properties: space_rb:5
+
+container:
+  control_method: daos
+  type: POSIX
+
+ior:
+  test_file: /test_file_1
+  iorflags:
+    flags: -v -w -k
+  api: DFS
+  transfer_size: 1M
+  block_size: 20G
+  dfs_oclass: RP_3GX
+
+cont_property:
+  rf_1: rf_lvl:2,rf:1
+  rf_2: rf_lvl:2,rf:2

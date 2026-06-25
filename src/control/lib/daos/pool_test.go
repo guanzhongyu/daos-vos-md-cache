@@ -1,0 +1,563 @@
+//
+// (C) Copyright 2020-2024 Intel Corporation.
+// (C) Copyright 2025-2026 Hewlett Packard Enterprise Development LP
+//
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+//
+
+package daos
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/dustin/go-humanize"
+	"github.com/google/go-cmp/cmp"
+	"github.com/pkg/errors"
+
+	"github.com/daos-stack/daos/src/control/common/test"
+)
+
+func TestDaos_PoolInfo_Usage(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status        int32
+		scmStats      *StorageUsageStats
+		nvmeStats     *StorageUsageStats
+		totalTargets  uint32
+		activeTargets uint32
+		expUsage      []*PoolTierUsage
+		expErr        error
+	}{
+		"successful query": {
+			scmStats: &StorageUsageStats{
+				MediaType: MediaTypeScm,
+				Total:     humanize.GByte * 30,
+				Free:      humanize.GByte * 15,
+				Min:       humanize.GByte * 1.6,
+				Max:       humanize.GByte * 2,
+			},
+			nvmeStats: &StorageUsageStats{
+				MediaType: StorageMediaTypeNvme,
+				Total:     humanize.GByte * 500,
+				Free:      humanize.GByte * 250,
+				Min:       humanize.GByte * 29.5,
+				Max:       humanize.GByte * 36,
+			},
+			totalTargets:  8,
+			activeTargets: 8,
+			expUsage: []*PoolTierUsage{
+				{
+					TierName:  "SCM",
+					Size:      humanize.GByte * 30,
+					Free:      humanize.GByte * 15,
+					Imbalance: 10,
+				},
+				{
+					TierName:  "NVME",
+					Size:      humanize.GByte * 500,
+					Free:      humanize.GByte * 250,
+					Imbalance: 10,
+				},
+			},
+		},
+		"disabled targets": {
+			scmStats: &StorageUsageStats{
+				MediaType: MediaTypeScm,
+				Total:     humanize.GByte * 30,
+				Free:      humanize.GByte * 15,
+				Min:       humanize.GByte * 1.6,
+				Max:       humanize.GByte * 2,
+			},
+			nvmeStats: &StorageUsageStats{
+				MediaType: MediaTypeNvme,
+				Total:     humanize.GByte * 500,
+				Free:      humanize.GByte * 250,
+				Min:       humanize.GByte * 29.5,
+				Max:       humanize.GByte * 36,
+			},
+			totalTargets:  8,
+			activeTargets: 4,
+			expUsage: []*PoolTierUsage{
+				{
+					TierName:  "SCM",
+					Size:      humanize.GByte * 30,
+					Free:      humanize.GByte * 15,
+					Imbalance: 5,
+				},
+				{
+					TierName:  "NVME",
+					Size:      humanize.GByte * 500,
+					Free:      humanize.GByte * 250,
+					Imbalance: 5,
+				},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pool := &PoolInfo{
+				TotalTargets:    tc.totalTargets,
+				ActiveTargets:   tc.activeTargets,
+				DisabledTargets: tc.activeTargets,
+				TierStats:       append([]*StorageUsageStats{}, tc.scmStats, tc.nvmeStats),
+			}
+
+			if diff := cmp.Diff(tc.expUsage, pool.Usage()); diff != "" {
+				t.Fatalf("Unexpected response (-want, +got):\n%s\n", diff)
+			}
+		})
+	}
+}
+
+func genTestMask(modifyFn func(pqm *PoolQueryMask)) PoolQueryMask {
+	testMask := PoolQueryMask(0)
+	modifyFn(&testMask)
+	return testMask
+}
+
+func genOptsStr(queryOpts ...PoolQueryOption) string {
+	optStrs := make([]string, 0, len(queryOpts))
+	for _, opt := range queryOpts {
+		optStrs = append(optStrs, opt.String())
+	}
+	return strings.Join(optStrs, ",")
+}
+
+func TestDaos_PoolQueryMask(t *testing.T) {
+	for name, tc := range map[string]struct {
+		testMask  PoolQueryMask
+		expString string
+	}{
+		"no mask": {
+			expString: "",
+		},
+		"default query mask": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				*pqm = DefaultPoolQueryMask
+			}),
+			expString: genOptsStr(PoolQueryOptionDisabledEngines, PoolQueryOptionRebuild,
+				PoolQueryOptionSpace),
+		},
+		"health-only query mask": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				*pqm = HealthOnlyPoolQueryMask
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionDisabledEngines,
+				PoolQueryOptionRebuild),
+		},
+		"set query all=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionDisabledEngines,
+				PoolQueryOptionEnabledEngines, PoolQueryOptionRebuild,
+				PoolQueryOptionSelfHealPolicy, PoolQueryOptionSpace),
+		},
+		"set query all=false": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				*pqm = PoolQueryMask(^uint64(0))
+				pqm.ClearAll()
+			}),
+			expString: "",
+		},
+		"set query space=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetOptions(PoolQueryOptionSpace)
+			}),
+			expString: PoolQueryOptionSpace.String(),
+		},
+		"set query space=false": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+				pqm.ClearOptions(PoolQueryOptionSpace)
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionDisabledEngines,
+				PoolQueryOptionEnabledEngines, PoolQueryOptionRebuild,
+				PoolQueryOptionSelfHealPolicy),
+		},
+		"set query space=false (already false)": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.ClearOptions(PoolQueryOptionSpace)
+			}),
+			expString: "",
+		},
+		"set query rebuild=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetOptions(PoolQueryOptionRebuild)
+			}),
+			expString: PoolQueryOptionRebuild.String(),
+		},
+		"set query rebuild=false": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+				pqm.ClearOptions(PoolQueryOptionRebuild)
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionDisabledEngines,
+				PoolQueryOptionEnabledEngines, PoolQueryOptionSelfHealPolicy,
+				PoolQueryOptionSpace),
+		},
+		"set query enabled_engines=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetOptions(PoolQueryOptionEnabledEngines)
+			}),
+			expString: PoolQueryOptionEnabledEngines.String(),
+		},
+		"set query enabled_engines=false": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+				pqm.ClearOptions(PoolQueryOptionEnabledEngines)
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionDisabledEngines,
+				PoolQueryOptionRebuild, PoolQueryOptionSelfHealPolicy,
+				PoolQueryOptionSpace),
+		},
+		"set query disabled_engines=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetOptions(PoolQueryOptionDisabledEngines)
+			}),
+			expString: PoolQueryOptionDisabledEngines.String(),
+		},
+		"set query disabled_engines=false": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+				pqm.ClearOptions(PoolQueryOptionDisabledEngines)
+			}),
+			expString: genOptsStr(PoolQueryOptionDeadEngines, PoolQueryOptionEnabledEngines,
+				PoolQueryOptionRebuild, PoolQueryOptionSelfHealPolicy,
+				PoolQueryOptionSpace),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.expString, tc.testMask.String()); diff != "" {
+				t.Fatalf("Unexpected response (-want, +got):\n%s\n", diff)
+			}
+		})
+	}
+}
+
+func TestDaos_PoolQueryMaskHasOption(t *testing.T) {
+	for name, tc := range map[string]struct {
+		testMask  PoolQueryMask
+		testOpt   PoolQueryOption
+		expHasOpt bool
+	}{
+		"empty shouldn't match anything": {
+			testOpt:   PoolQueryOptionSpace,
+			expHasOpt: false,
+		},
+		"health-only shouldn't match space": {
+			testMask:  HealthOnlyPoolQueryMask,
+			testOpt:   PoolQueryOptionSpace,
+			expHasOpt: false,
+		},
+		"default should match space": {
+			testMask:  DefaultPoolQueryMask,
+			testOpt:   PoolQueryOptionSpace,
+			expHasOpt: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			test.AssertEqual(t, tc.expHasOpt, tc.testMask.HasOption(tc.testOpt), "unexpected HasOption result")
+		})
+	}
+}
+
+func TestDaos_PoolQueryMaskMarshalJSON(t *testing.T) {
+	// NB: The MarshalJSON implementation uses the stringer, so
+	// there's no point in testing all of the options here.
+	for name, tc := range map[string]struct {
+		testMask PoolQueryMask
+		expJSON  []byte
+	}{
+		"no mask": {
+			expJSON: []byte(`""`),
+		},
+		"set query all=true": {
+			testMask: genTestMask(func(pqm *PoolQueryMask) {
+				pqm.SetAll()
+			}),
+			expJSON: []byte(`"dead_engines,disabled_engines,enabled_engines,rebuild,self_heal_policy,space"`),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gotJSON, err := tc.testMask.MarshalJSON()
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.expJSON, gotJSON); diff != "" {
+				t.Fatalf("Unexpected response (-want, +got):\n%s\n", diff)
+			}
+		})
+	}
+}
+
+func TestDaos_PoolQueryMaskUnmarshalJSON(t *testing.T) {
+	for name, tc := range map[string]struct {
+		testData  []byte
+		expString string
+		expErr    error
+	}{
+		"unknown value": {
+			testData: []byte("rebuild,foo"),
+			expErr:   errors.New("foo"),
+		},
+		"empty value": {
+			expString: "",
+		},
+		"uint64 value": {
+			testData:  []byte("18446744073709551603"),
+			expString: "dead_engines,rebuild,self_heal_policy,space",
+		},
+		"string values": {
+			testData:  []byte("rebuild,disabled_engines"),
+			expString: "disabled_engines,rebuild",
+		},
+		"JSON-encoded string values": {
+			testData: func() []byte {
+				if b, err := json.Marshal("rebuild,enabled_engines"); err != nil {
+					panic(err)
+				} else {
+					return b
+				}
+			}(),
+			expString: "enabled_engines,rebuild",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var testMask PoolQueryMask
+
+			gotErr := testMask.UnmarshalJSON(tc.testData)
+			test.CmpErr(t, tc.expErr, gotErr)
+			if tc.expErr != nil {
+				return
+			}
+
+			if diff := cmp.Diff(tc.expString, testMask.String()); diff != "" {
+				t.Fatalf("Unexpected mask after UnmarshalJSON (-want, +got):\n%s\n", diff)
+			}
+		})
+	}
+}
+
+func TestDaos_PoolRebuildState_String(t *testing.T) {
+	for name, tc := range map[string]struct {
+		state     PoolRebuildState
+		expString string
+	}{
+		"idle":     {PoolRebuildStateIdle, "idle"},
+		"busy":     {PoolRebuildStateBusy, "busy"},
+		"done":     {PoolRebuildStateDone, "done"},
+		"stopping": {PoolRebuildStateStopping, "stopping"},
+		"stopped":  {PoolRebuildStateStopped, "stopped"},
+		"failing":  {PoolRebuildStateFailing, "failing"},
+		"failed":   {PoolRebuildStateFailed, "failed"},
+		"unknown":  {PoolRebuildState(999), "unknown"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gotString := tc.state.String()
+
+			test.AssertEqual(t, tc.expString, gotString, "unexpected string value")
+		})
+	}
+}
+
+func TestDaos_PoolRebuildState_MarshalJSON(t *testing.T) {
+	for name, tc := range map[string]struct {
+		state   PoolRebuildState
+		expJSON string
+		expErr  error
+	}{
+		"idle":     {PoolRebuildStateIdle, `"idle"`, nil},
+		"busy":     {PoolRebuildStateBusy, `"busy"`, nil},
+		"done":     {PoolRebuildStateDone, `"done"`, nil},
+		"stopping": {PoolRebuildStateStopping, `"stopping"`, nil},
+		"stopped":  {PoolRebuildStateStopped, `"stopped"`, nil},
+		"failing":  {PoolRebuildStateFailing, `"failing"`, nil},
+		"failed":   {PoolRebuildStateFailed, `"failed"`, nil},
+		"unknown":  {PoolRebuildState(999), `"unknown"`, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gotJSON, gotErr := tc.state.MarshalJSON()
+
+			test.CmpErr(t, tc.expErr, gotErr)
+			if tc.expErr != nil {
+				return
+			}
+
+			test.AssertEqual(t, tc.expJSON, string(gotJSON), "unexpected JSON")
+		})
+	}
+}
+
+func TestDaos_PoolRebuildState_UnmarshalJSON(t *testing.T) {
+	for name, tc := range map[string]struct {
+		json     string
+		expState PoolRebuildState
+		expErr   error
+	}{
+		"idle":               {`"idle"`, PoolRebuildStateIdle, nil},
+		"busy":               {`"busy"`, PoolRebuildStateBusy, nil},
+		"done":               {`"done"`, PoolRebuildStateDone, nil},
+		"stopping":           {`"stopping"`, PoolRebuildStateStopping, nil},
+		"stopped":            {`"stopped"`, PoolRebuildStateStopped, nil},
+		"failing":            {`"failing"`, PoolRebuildStateFailing, nil},
+		"failed":             {`"failed"`, PoolRebuildStateFailed, nil},
+		"uppercase idle":     {`"IDLE"`, PoolRebuildStateIdle, nil},
+		"uppercase busy":     {`"BUSY"`, PoolRebuildStateBusy, nil},
+		"uppercase done":     {`"DONE"`, PoolRebuildStateDone, nil},
+		"uppercase stopping": {`"STOPPING"`, PoolRebuildStateStopping, nil},
+		"uppercase stopped":  {`"STOPPED"`, PoolRebuildStateStopped, nil},
+		"uppercase failing":  {`"FAILING"`, PoolRebuildStateFailing, nil},
+		"uppercase failed":   {`"FAILED"`, PoolRebuildStateFailed, nil},
+		"mixed case stopped": {`"StOpPeD"`, PoolRebuildStateStopped, nil},
+		"invalid":            {`"invalid"`, PoolRebuildState(0), errors.New("failed to unmarshal")},
+		"empty":              {`""`, PoolRebuildState(0), errors.New("failed to unmarshal")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var gotState PoolRebuildState
+			gotErr := gotState.UnmarshalJSON([]byte(tc.json))
+
+			test.CmpErr(t, tc.expErr, gotErr)
+			if tc.expErr != nil {
+				return
+			}
+
+			test.AssertEqual(t, tc.expState, gotState, "unexpected state")
+		})
+	}
+}
+
+func TestDaos_PoolInfo_UpdateRebuildStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		poolInfo        *PoolInfo
+		expDerivedState PoolRebuildState
+		expErr          error
+	}{
+		"nil rebuild status": {
+			poolInfo: &PoolInfo{},
+		},
+		"idle state with status 0": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateIdle,
+				},
+			},
+			expDerivedState: PoolRebuildStateIdle,
+		},
+		"idle state with canceled status": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State:  PoolRebuildStateIdle,
+					Status: int32(OpCanceled),
+				},
+			},
+			expDerivedState: PoolRebuildStateStopped,
+		},
+		"idle state with non-zero non-canceled status": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State:  PoolRebuildStateIdle,
+					Status: -1008,
+				},
+			},
+			expDerivedState: PoolRebuildStateFailed,
+		},
+		"done state with status 0": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateDone,
+				},
+			},
+			expDerivedState: PoolRebuildStateDone,
+		},
+		"done state with non-zero status": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State:  PoolRebuildStateDone,
+					Status: -1009,
+				},
+			},
+			expDerivedState: PoolRebuildStateFailed,
+		},
+		"busy state with status 0": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateBusy,
+				},
+			},
+			expDerivedState: PoolRebuildStateBusy,
+		},
+		"busy state with canceled status": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State:  PoolRebuildStateBusy,
+					Status: int32(OpCanceled),
+				},
+			},
+			expDerivedState: PoolRebuildStateStopping,
+		},
+		"busy state with non-zero non-canceled status": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State:  PoolRebuildStateBusy,
+					Status: -1010,
+				},
+			},
+			expDerivedState: PoolRebuildStateFailing,
+		},
+		"illegal stopped state": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateStopped,
+				},
+			},
+			expErr: errors.New("illegal rebuild state"),
+		},
+		"illegal stopping state": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateStopping,
+				},
+			},
+			expErr: errors.New("illegal rebuild state"),
+		},
+		"illegal failed state": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateFailed,
+				},
+			},
+			expErr: errors.New("illegal rebuild state"),
+		},
+		"illegal failing state": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildStateFailing,
+				},
+			},
+			expErr: errors.New("illegal rebuild state"),
+		},
+		"illegal rebuild state value": {
+			poolInfo: &PoolInfo{
+				Rebuild: &PoolRebuildStatus{
+					State: PoolRebuildState(999),
+				},
+			},
+			expErr: errors.New("illegal rebuild state value"),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gotErr := tc.poolInfo.UpdateRebuildStatus()
+
+			test.CmpErr(t, tc.expErr, gotErr)
+			if tc.expErr != nil {
+				return
+			}
+
+			if tc.poolInfo.Rebuild != nil {
+				test.AssertEqual(t, tc.expDerivedState, tc.poolInfo.Rebuild.DerivedState,
+					"unexpected derived state")
+			}
+		})
+	}
+}

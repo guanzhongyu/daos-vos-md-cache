@@ -1,0 +1,48 @@
+/**
+ * (C) Copyright 2019-2022 Intel Corporation.
+ * (C) Copyright 2026 Hewlett Packard Enterprise Development LP
+ * (C) Copyright 2025 Google LLC
+ *
+ * SPDX-License-Identifier: BSD-2-Clause-Patent
+ */
+
+#ifndef __DAOS_DDB_COMMON_H
+#define __DAOS_DDB_COMMON_H
+
+#include <daos/common.h>
+#include <daos/object.h>
+#include <daos_obj.h>
+#include <daos_types.h>
+#include "ddb.h"
+
+#define SUCCESS(rc) ((rc) == DER_SUCCESS)
+
+#define ddb_print(ctx, str) \
+	do { if ((ctx)->dc_io_ft.ddb_print_message) \
+		(ctx)->dc_io_ft.ddb_print_message(str); \
+	else \
+		printf(str); } while (0)
+
+#define ddb_printf(ctx, fmt, ...) \
+	do { if ((ctx)->dc_io_ft.ddb_print_message) \
+		(ctx)->dc_io_ft.ddb_print_message(fmt, __VA_ARGS__); \
+	else                            \
+		printf(fmt, __VA_ARGS__); \
+	} while (0)
+
+#define ddb_error(ctx, str) \
+	do { if (ctx->dc_io_ft.ddb_print_error) \
+		ctx->dc_io_ft.ddb_print_error(str); \
+	else \
+		printf(str); } while (0)
+
+#define ddb_errorf(ctx, fmt, ...)                                                                  \
+	do {                                                                                       \
+		if ((ctx)->dc_io_ft.ddb_print_error)                                               \
+			(ctx)->dc_io_ft.ddb_print_error("At %s:%d: " fmt, __FILE__, __LINE__,      \
+							__VA_ARGS__);                              \
+		else                                                                               \
+			printf("At %s:%d: " fmt, __FILE__, __LINE__, __VA_ARGS__);                 \
+	} while (0)
+
+#endif /* __DAOS_DDB_COMMON_H */

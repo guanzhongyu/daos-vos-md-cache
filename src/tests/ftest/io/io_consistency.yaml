@@ -1,0 +1,51 @@
+hosts:
+  test_servers: 2
+  test_clients: 2
+
+timeout: 210
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  engines:
+    0:
+      pinned_numa_node: 0
+      nr_xs_helpers: 1
+      log_file: daos_server0.log
+      log_mask: ERR
+      storage: auto
+    1:
+      pinned_numa_node: 1
+      nr_xs_helpers: 1
+      log_file: daos_server1.log
+      log_mask: ERR
+      storage: auto
+
+pool:
+  scm_size: 5000000000
+  nvme_size: 20000000000
+  properties: rd_fac:0
+
+container:
+  type: POSIX
+
+ior:
+  client_processes:
+    np: 10
+  io_consistency: !mux
+    FPP:
+      api_flag:
+        - [DFS, "-v -w -k -F"]
+        - [POSIX, "-v -r -R -F"]
+    SSF:
+      api_flag:
+        - [DFS, "-v -w -k"]
+        - [POSIX, "-v -r -R"]
+  test_file: /testFile
+  signature: 5
+  transfer_size: '1M'
+  block_size: '2G'
+  dfs_oclass: "SX"
+
+dfuse:
+  disable_caching: true

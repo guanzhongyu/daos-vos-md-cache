@@ -1,0 +1,59 @@
+hosts:
+  test_servers: 2
+  test_clients: 1
+
+timeout: 360
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  engines:
+    0:
+      pinned_numa_node: 0
+      nr_xs_helpers: 1
+      log_file: daos_server0.log
+      storage: auto
+    1:
+      pinned_numa_node: 1
+      nr_xs_helpers: 1
+      log_file: daos_server1.log
+      storage: auto
+
+pool:
+  scm_size: 2G
+  nvme_size: 20G
+
+container:
+  type: POSIX
+  properties_variants:
+    - cksum:crc16,cksum_size:16384,srv_cksum:on
+    - cksum:crc16,cksum_size:16384,srv_cksum:on,rd_fac:1
+    - cksum:crc16,cksum_size:16384,srv_cksum:on,rd_fac:2
+
+fio:
+  names:
+    - global
+    - test
+  global:
+    ioengine: 'libaio'
+    thread: 1
+    group_reporting: 1
+    verify: 'crc64'
+    iodepth: 16
+    variants:
+      # [direct, blocksize, size, rw]
+      - [0, 256B, 1M, rw]
+      - [0, 256B, 1M, randrw]
+      - [0, 1M,   2G, rw]
+      - [0, 1M,   2G, randrw]
+      - [1, 256B, 1M, rw]
+      - [1, 256B, 1M, randrw]
+      - [1, 1M,   2G, rw]
+      - [1, 1M,   2G, randrw]
+  test:
+    numjobs: 1
+
+dfuse:
+  thread_count: 8
+  eq_count: 2
+  cores: '0-3'

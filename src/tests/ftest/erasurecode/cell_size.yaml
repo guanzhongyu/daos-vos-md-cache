@@ -1,0 +1,52 @@
+hosts:
+  test_servers: 5
+  test_clients: 3
+
+timeout: 1600
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  engines:
+    0:
+      pinned_numa_node: 0
+      nr_xs_helpers: 1
+      log_file: daos_server0.log
+      log_mask: ERR
+      storage: auto
+    1:
+      pinned_numa_node: 1
+      nr_xs_helpers: 1
+      log_file: daos_server1.log
+      log_mask: ERR
+      storage: auto
+
+pool:
+  size: 93%
+  cell_sizes:
+    - 4KiB
+    - 64KiB
+    - 128KiB
+    - 1MiB
+
+container:
+  type: POSIX
+
+ior:
+  api: "DFS"
+  client_processes:
+    np: 48
+  dfs_destroy: false
+  iorflags:
+    flags: "-w -W -r -R -G 1 -vv"
+  test_file: /testFile
+  transfersize_blocksize:
+    # [transfer size, block size]
+    - [8k, 64M]
+    - [1M, 128M]
+  dfs_oclass:
+    - "EC_2P1GX"
+    - "EC_2P2GX"
+    - "EC_4P1GX"
+    - "EC_4P2GX"
+    - "EC_4P3GX"

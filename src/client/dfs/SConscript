@@ -1,0 +1,59 @@
+"""Build FUSE client"""
+
+
+def configure_lustre(denv):
+    """Do Lustre configure checks"""
+    if GetOption('help') or GetOption('clean'):
+        return
+
+    def _print(msg):
+        if not GetOption('silent'):
+            print(msg)
+
+    # If Lustre installed build a Lustre-aware libduns
+    conf = Configure(denv)
+    is_installed = conf.CheckLibWithHeader('lustreapi', 'linux/lustre/lustre_user.h', 'c')
+    conf.Finish()
+
+    if not is_installed:
+        _print("Not building with Lustre bindings: Lustre not detected")
+        return
+    _print("Installed Lustre version detected")
+
+    lenv = denv.Clone()
+    lenv.AppendUnique(LIBS=['lustreapi'])
+    if not lenv.CheckFunc('llapi_unlink_foreign'):
+        _print("Not building with Lustre bindings: Lustre version is not compatible")
+        return
+    _print("Building with Lustre bindings: Lustre version is compatible")
+
+    denv.AppendUnique(CCFLAGS=['-DLUSTRE_INCLUDE'])
+
+
+def scons():
+    """Execute build"""
+    Import('env')
+
+    env.d_add_build_rpath()
+
+    denv = env.Clone()
+
+    configure_lustre(denv)
+
+    libraries = ['daos_common', 'daos', 'uuid', 'gurt']
+
+    dfs_src = ['common.c', 'cont.c', 'dir.c', 'file.c', 'io.c', 'lookup.c', 'mnt.c', 'obj.c',
+               'pipeline.c', 'readdir.c', 'rename.c', 'xattr.c', 'dfs_sys.c', 'metrics.c']
+    dfs = denv.d_library('dfs', dfs_src, LIBS=libraries)
+    denv.Install('$PREFIX/lib64/', dfs)
+
+    libraries = libraries + ['dfs']
+
+    denv.AppendUnique(LIBPATH=[Dir('.')])
+
+    duns = denv.d_library('duns', 'duns.c', LIBS=libraries)
+    denv.Install('$PREFIX/lib64/', duns)
+
+
+if __name__ == "SCons.Script":
+    scons()

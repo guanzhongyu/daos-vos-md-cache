@@ -1,0 +1,53 @@
+hosts:
+  test_servers: 5
+  test_clients: 1
+
+timeout: 1200
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  engines:
+    0:
+      targets: 4
+      log_file: daos_server0.log
+      env_vars:
+        - DD_MASK=group_metadata_only
+        - DAOS_MD_CAP=1024
+      storage: auto
+    1:
+      targets: 4
+      log_file: daos_server1.log
+      env_vars:
+        - DD_MASK=group_metadata_only
+        - DAOS_MD_CAP=1024
+      storage: auto
+
+pool:
+  scm_size: 512M
+  label: pool
+  set_logmasks: False
+
+container:
+  control_method: API
+  akey_size: 5
+  dkey_size: 5
+  data_size: 256
+  execute_io:
+    run_time: 10
+    rank: 1
+    obj_classs: "OC_RP_3G1"
+
+boundary_test: !mux
+  test_1:
+    num_pools: 1
+    num_containers: 30000
+    with_io: false
+  test_2:
+    num_pools: 45
+    num_containers: 200
+    with_io: false
+  test_with_io:
+    num_pools: 20
+    num_containers: 200
+    with_io: true

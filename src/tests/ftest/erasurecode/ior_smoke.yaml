@@ -1,0 +1,68 @@
+hosts:
+  test_servers: 5
+  test_clients: 3
+
+timeout: 900
+
+setup:
+  start_agents_once: False
+  start_servers_once: False
+
+server_config:
+  name: daos_server
+  engines_per_host: 2
+  crt_timeout: 60
+  engines:
+    0:
+      pinned_numa_node: 0
+      nr_xs_helpers: 1
+      log_file: daos_server0.log
+      log_mask: ERR
+      storage: auto
+    1:
+      pinned_numa_node: 1
+      nr_xs_helpers: 1
+      log_file: daos_server1.log
+      log_mask: ERR
+      storage: auto
+
+pool:
+  size: 93%
+  properties: rd_fac:1
+
+container:
+  type: POSIX
+
+ior:
+  api: "DFS"
+  client_processes:
+    np: 48
+  flags: "-w -W -r -R -G 1 -vv"
+  test_file: /testFile
+  transfersize_blocksize: !mux
+    1M_128M:
+      transfer_size: 1M
+      block_size: 128M
+    2M_128M:
+      transfer_size: 2M
+      block_size: 64M
+  objectclass:
+    dfs_oclass:
+      - "EC_2P1G1"
+      - "EC_2P1G8"
+      - "EC_2P1GX"
+      - "EC_2P2G1"
+      - "EC_2P2G8"
+      - "EC_2P2GX"
+      - "EC_4P1G1"
+      - "EC_4P1G8"
+      - "EC_4P1GX"
+      - "EC_4P2G1"
+      - "EC_4P2G8"
+      - "EC_4P2GX"
+      - "EC_4P3G1"
+      - "EC_4P3G8"
+      - "EC_4P3GX"
+      - "EC_8P2G1"
+      - "EC_8P2G8"
+      - "EC_8P2GX"

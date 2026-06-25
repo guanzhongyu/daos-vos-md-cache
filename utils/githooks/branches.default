@@ -1,0 +1,4 @@
+#!/bin/bash
+set -eEuo pipefail
+echo feature/multiprovider
+echo feature/firewall

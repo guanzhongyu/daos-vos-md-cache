@@ -1,0 +1,75 @@
+# Set of variables for Rocky 8
+# yamllint disable rule:line-length
+
+daos_openmpi_module_path: /usr/share/modulefiles/mpi/openmpi-x86_64
+
+daos_base_deps:
+  rpms:
+    - bash
+    - bzip2-devel
+    - capstone
+    - createrepo
+    - dnf-plugins-core
+    - gdb
+    - glibc
+    - iproute
+    - jq
+    - lbzip2
+    - libasan
+    - numactl
+    - numactl-libs
+    - numatop
+    - platform-python
+    - psmisc
+    - python36
+    - python3.11-devel
+    - python3-pexpect
+    - python3-wheel
+    - systemd
+    - tree
+    - valgrind-devel
+    - wget
+
+daos_dev_deps:
+  rpms:
+    - daos-raft-devel
+    - gcc-gfortran
+    - libaec-devel
+    - libattr-devel
+    - python3.11
+    - python3.11-devel
+    - python3-clustershell
+    - python3-pip
+    - python3-wheel
+    - rpmdevtools
+    - rpm-build
+    - spdk-devel
+
+daos_client_deps:
+  rpms:
+    - compat-hwloc1
+    - fuse3
+    - fuse3-libs
+    - libaec
+    - libuuid
+    - lz4-libs
+    - numactl-devel
+    - systemd
+    - util-linux
+
+daos_server_deps:
+  rpms:
+    - compat-hwloc1
+    - dpdk
+    - ipmctl
+    - libipmctl
+    - libpmemobj
+    - libuuid
+    - lz4-libs
+    - ndctl
+    - pciutils
+    - spdk-tools
+
+mlnx_deps:
+  rpms:
+    - mlnx-ofed-all

@@ -1,0 +1,35 @@
+hosts:
+  test_servers: 2
+  test_clients: 1
+
+timeout: 360
+
+server_config:
+  engines_per_host: 2
+  engines:
+    0:
+      storage: auto
+      log_file: daos_server_0.log
+      pinned_numa_node: 0
+      targets: 8
+    1:
+      storage: auto
+      log_file: daos_server_1.log
+      pinned_numa_node: 1
+      targets: 8
+
+pool:
+  size: 100G
+
+container:
+  control_method: daos
+  type: POSIX
+
+ior:
+  client_processes:
+    ppn: 1
+  flags: -k -v -w -W
+  api: DFS
+  transfer_size: 1M
+  block_size: 10G
+  dfs_oclass: SX

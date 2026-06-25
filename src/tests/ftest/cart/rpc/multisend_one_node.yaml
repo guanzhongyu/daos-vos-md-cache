@@ -1,0 +1,33 @@
+ENV:
+  default:
+    - D_LOG_MASK: "INFO"
+    - D_INTERFACE: "eth0"
+env_D_PROVIDER:
+  ofi_tcp:
+    D_PROVIDER: "ofi+tcp"
+hosts:
+  hosts_1:
+    config: one_node
+    test_servers: server-1
+    test_clients: server-1
+timeout: 600
+tests:
+  multisend:
+    name: multisend
+    test_servers_bin: crt_launch
+    test_servers_arg: "-e test_multisend_server --name grp1"
+    test_servers_env: ""
+    test_servers_ppn: "16"
+
+    test_clients_env: ""
+    test_clients_ppn: "1"
+    test_clients_bin:
+      - test_multisend_client
+      - test_multisend_client
+      - test_multisend_client
+      - test_multisend_client
+    test_clients_arg:
+      - "--attach grp1 -m 1 -n 100 -c 256 --num_ctx 3 -x"
+      - "--attach grp1 -m 2 -n 100 -c 256 --num_ctx 3 -x"
+      - "--attach grp1 -m 1 -n 100 -c 256 --num_ctx 3"
+      - "--attach grp1 -m 2 -n 100 -c 256 --num_ctx 3 -q"

@@ -1,0 +1,34 @@
+name: Unit testing
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  Run_in_docker:
+    if: github.repository == 'daos-stack/daos'
+    runs-on: [self-hosted, docker]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: 'recursive'
+      - name: Build deps in Docker
+        run: docker build . --file utils/docker/Dockerfile.el.9
+            --build-arg DAOS_BUILD=no
+            --build-arg DEPS_JOBS=50
+      - name: Build daos in Docker
+        run: docker build . --file utils/docker/Dockerfile.el.9
+            --build-arg DEPS_JOBS=50
+            --build-arg DAOS_KEEP_SRC=yes
+            --build-arg DAOS_TARGET_TYPE=debug
+            --build-arg DAOS_JAVA_BUILD=yes
+            --tag gha-amd-${{github.run_id}}-${{github.run_attempt}}
+      - name: Run Unit Testing
+        run: docker run gha-amd-${{github.run_id}}-${{github.run_attempt}}
+            ./daos/utils/ci/run_unit_tests_in_gha.sh

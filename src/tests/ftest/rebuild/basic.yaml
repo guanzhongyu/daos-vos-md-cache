@@ -1,0 +1,46 @@
+hosts:
+  test_servers: 6
+  test_clients: 1
+
+timeout: 600
+
+server_config:
+  name: daos_server
+  crt_timeout: 10
+  engines_per_host: 1
+  engines:
+    0:
+      targets: 2
+      nr_xs_helpers: 0
+      log_mask: DEBUG,MEM=ERR
+      env_vars:
+        - DD_MASK=mgmt,md,rebuild
+      storage:
+        0:
+          class: ram
+          scm_mount: /mnt/daos
+
+pool:
+  size: 1G
+  pool_query_timeout: 30
+  properties: rd_fac:2
+
+container:
+  akey_size: 5
+  dkey_size: 5
+  debug: true
+  properties: rd_fac:2
+
+testparams:
+  num_pools: 2
+  datasets:
+    # oclass, data_size, object_qty, record_qty
+    - [OC_RP_3G1, 32, 0, 1]
+    - [OC_RP_3G1, 32, 1, 1]
+    - [OC_RP_3G1, 32, 1, 10]
+    - [OC_RP_3G1, 32, 20, 1]
+    - [OC_RP_3G1, 32, 20, 10]
+    - [OC_RP_3G1, 250, 1, 1]
+    - [OC_RP_3G1, 250, 1, 10]
+    - [OC_RP_3G1, 250, 20, 1]
+    - [OC_RP_3G1, 250, 20, 10]

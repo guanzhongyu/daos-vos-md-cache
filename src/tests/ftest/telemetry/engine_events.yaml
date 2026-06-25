@@ -1,0 +1,18 @@
+hosts:
+  test_servers: 2
+
+timeout: 280
+
+server_config:
+  engines_per_host: 2
+  engines:
+    0:
+      targets: 4
+      nr_xs_helpers: 0
+      log_file: daos_server_0.log
+      storage: auto
+    1:
+      targets: 4
+      nr_xs_helpers: 0
+      log_file: daos_server_1.log
+      storage: auto

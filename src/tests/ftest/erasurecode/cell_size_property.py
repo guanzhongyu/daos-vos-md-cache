@@ -1,0 +1,97 @@
+'''
+  (C) Copyright 2020-2023 Intel Corporation.
+  (C) Copyright 2025-2026 Hewlett Packard Enterprise Development LP
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+'''
+from itertools import product
+
+from ior_test_base import IorTestBase
+
+
+class EcodCellSizeProperty(IorTestBase):
+    # pylint: disable=too-few-public-methods
+    """EC IOR class to run tests with different container cell size.
+
+    Test Class Description: To validate Erasure code object works with
+                            different EC cell sizes property.
+
+    :avocado: recursive
+    """
+    def verify_cont_ec_cell_size(self, expected_size):
+        """
+        Verify the container EC cell size property.
+
+        Args:
+            expected_size (int): expected container cell size
+        """
+        cont_prop = self.container.get_prop(properties=["ec_cell_sz"])
+        actual_size = cont_prop["response"][0]["value"]
+
+        self.assertEqual(expected_size, actual_size, "unexpected container ec_cell_sz")
+
+    def test_ec_pool_property(self):
+        """Jira ID: DAOS-7321.
+
+        Test Description:
+            Verify container cell sized is picked from container property
+            and not the pool default cell size.
+
+        Use Case:
+            Create the Pool with different EC cell size
+            Create the container and verify the ec_cell_sz is same for both
+                pool and container.
+            Create the container with different EC cell size
+            Verify the ec_cell_sz is updated for the container.
+            Run IOR with data verification.
+            Verify the cont ec_cell_sz property after IOR.
+
+        :avocado: tags=all,full_regression
+        :avocado: tags=hw,large
+        :avocado: tags=ec,ec_ior,daos_cmd
+        :avocado: tags=EcodCellSizeProperty,ec_cell_property,test_ec_pool_property
+        """
+        pool_cell_sizes = self.params.get("cell_sizes", "/run/pool/*")
+        cont_cell_sizes = self.params.get("cell_sizes", "/run/container/*")
+        ior_transfer_sizes = self.params.get("transfer_sizes", "/run/ior/*")
+
+        for pool_cell_size in pool_cell_sizes:
+            # Create the pool
+            self.pool = self.get_pool(properties=f"rd_fac:0,space_rb:0,ec_cell_sz:{pool_cell_size}")
+
+            # Verify pool EC cell size
+            pool_prop_expected = int(self.pool.properties.value.split(",")[-1].split(":")[1])
+            self.assertEqual(
+                pool_prop_expected, self.pool.get_property("ec_cell_sz"),
+                "pool get-prop ec_cell_sz does not match set property")
+
+            # Run IOR for different Transfer size and container cell size.
+            for tx_size, cont_cell in product(ior_transfer_sizes, cont_cell_sizes):
+                # Initial container
+                self.add_container(self.pool, create=False)
+
+                # Use the default pool property for container and do not update
+                if cont_cell != pool_prop_expected:
+                    self.container.properties.update(
+                        f"cksum:off,srv_cksum:off,ec_cell_sz:{cont_cell}")
+
+                # Create the container and open handle
+                self.container.create()
+                self.container.open()
+
+                # Verify container EC cell size property
+                self.verify_cont_ec_cell_size(cont_cell)
+
+                # Update IOR Command and Run
+                self.update_ior_cmd_with_pool(create_cont=False)
+                self.ior_cmd.transfer_size.update(tx_size)
+                self.run_ior_with_pool(create_pool=False, create_cont=False)
+
+                # Verify container EC cell size property after IOR
+                self.verify_cont_ec_cell_size(cont_cell)
+
+                # Destroy the container.
+                self.container.destroy()
+
+            # Destroy the pool
+            self.pool.destroy()

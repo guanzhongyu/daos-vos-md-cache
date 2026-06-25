@@ -1,0 +1,28 @@
+hosts:
+  test_servers: 5
+  test_clients: 1
+
+timeout: 300
+
+server_config:
+  engines_per_host: 1
+  system_ram_reserved: 21
+  engines:
+    0:
+      storage:
+        0:
+          class: ram
+          scm_mount: /mnt/daos0
+
+pool:
+  scm_size: 1G
+  properties: rd_fac:4
+
+container:
+  type: POSIX
+  cont_rf:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
